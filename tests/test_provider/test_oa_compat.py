@@ -1,0 +1,118 @@
+"""Tests for OACompatAdapter — OpenAI SDK wrapper."""
+
+from unittest.mock import patch
+
+import pytest
+
+
+class TestOACompatAdapter:
+    """Test OACompatAdapter with mocked OpenAI SDK."""
+
+    def test_complete_success(self):
+        mock_response = type(
+            "MockChoice",
+            (),
+            {
+                "message": type("MockMsg", (), {"content": "Hello world!"})(),
+            },
+        )()
+        mock_completion = type(
+            "MockCompletion",
+            (),
+            {
+                "choices": [mock_response],
+                "model": "gpt-4o",
+                "usage": type(
+                    "MockUsage", (), {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8}
+                )(),
+            },
+        )()
+
+        def fake_create(self, **kwargs):
+            return mock_completion
+
+        mock_openai = type(
+            "MockOpenAI",
+            (),
+            {
+                "chat": type(
+                    "MockChat",
+                    (),
+                    {
+                        "completions": type("MockCompletions", (), {"create": fake_create})(),
+                    },
+                )(),
+                "api_key": "test-key",
+                "base_url": "https://test.url",
+            },
+        )
+
+        with patch("openai.OpenAI", return_value=mock_openai):
+            from brain.provider.oa_compat import OACompatAdapter
+
+            adapter = OACompatAdapter(base_url="https://test.url", api_key="test-key")
+            text, stats = adapter.complete(
+                messages=[{"role": "user", "content": "hi"}],
+                model="gpt-4o",
+            )
+            assert text == "Hello world!"
+            assert stats.model == "gpt-4o"
+            assert stats.prompt_tokens == 5
+            assert stats.completion_tokens == 3
+
+    def test_empty_response_raises(self):
+        mock_response = type(
+            "MockChoice",
+            (),
+            {
+                "message": type("MockMsg", (), {"content": ""})(),
+            },
+        )()
+        mock_completion = type(
+            "MockCompletion",
+            (),
+            {
+                "choices": [mock_response],
+                "model": "gpt-4o",
+                "usage": type(
+                    "MockUsage", (), {"prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1}
+                )(),
+            },
+        )()
+
+        def fake_create(self, **kwargs):
+            return mock_completion
+
+        mock_openai = type(
+            "MockOpenAI",
+            (),
+            {
+                "chat": type(
+                    "MockChat",
+                    (),
+                    {
+                        "completions": type("MockCompletions", (), {"create": fake_create})(),
+                    },
+                )(),
+                "api_key": "test-key",
+                "base_url": "https://test.url",
+            },
+        )
+
+        with patch("openai.OpenAI", return_value=mock_openai):
+            from brain.errors import BadResponseError
+            from brain.provider.oa_compat import OACompatAdapter
+
+            adapter = OACompatAdapter(base_url="https://test.url", api_key="test-key")
+            with pytest.raises(BadResponseError, match="Empty response"):
+                adapter.complete(
+                    messages=[{"role": "user", "content": "hi"}],
+                    model="gpt-4o",
+                )
+
+    def test_supports_model_always_true(self):
+        from brain.provider.oa_compat import OACompatAdapter
+
+        adapter = OACompatAdapter(base_url="https://test.url", api_key="test-key")
+        assert adapter.supports_model("anything")
+        assert adapter.supports_model("")

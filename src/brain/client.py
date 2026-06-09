@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import time
-
 from .context import assemble_messages
 from .depth import merge_depth_into_params
-from .errors import APIError, BadResponseError, RetryableError
-from .keys import get_api_key, get_base_url, get_default_model
+from .keys import get_default_model
 from .profiles import get_all_profiles
-from .retry import is_retryable, retry_with_backoff
 from .stats import Stats
 
 DEFAULT_MAX_TOKENS = 16384
@@ -29,18 +25,16 @@ def _call_api(
     temperature: float | None = None,
     raw: bool = False,
     retries: int = 3,
+    raw_model: bool = False,
 ) -> tuple[str, Stats]:
-    """Call the API with retry logic.
+    """Call the API via provider adapter layer.
 
     Returns (response_text, Stats).
     Raises APIError after retries exhausted.
     """
-    # Lazy import for fast startup
-    from openai import OpenAI
+    from .provider import complete
 
     actual_model = model or get_default_model(provider)
-    url = base_url or get_base_url(provider)
-    key = api_key or get_api_key(provider)
 
     # Build messages
     messages = assemble_messages(
@@ -50,11 +44,8 @@ def _call_api(
         raw=raw,
     )
 
-    # Build params
-    params: dict = {
-        "model": actual_model,
-        "messages": messages,
-    }
+    # Build base params
+    params: dict = {}
 
     # Apply depth preset if provided (sets max_tokens from depth config)
     if depth:
@@ -69,35 +60,17 @@ def _call_api(
     if temperature is not None:
         params["temperature"] = temperature
 
-    # Stats tracking
-    stats = Stats(model=actual_model)
-    start_time = time.monotonic()
+    # raw_model: pass model name as-is, no transformation
+    final_model = actual_model if raw_model else actual_model
 
-    client = OpenAI(api_key=key, base_url=url)
-
-    def _make_call():
-        try:
-            response = client.chat.completions.create(**params)
-            stats.update_from_response(response)
-            stats.latency_ms = (time.monotonic() - start_time) * 1000
-
-            content = response.choices[0].message.content
-            if not content or not content.strip():
-                raise BadResponseError("Empty response from model")
-
-            return content.strip()
-
-        except BadResponseError:
-            raise
-        except Exception as e:
-            status_code = getattr(e, "status_code", None)
-            if status_code and is_retryable(status_code):
-                stats.retries_used += 1
-                raise RetryableError(str(e), status_code=status_code) from e
-            raise APIError(str(e), status_code=status_code) from e
-
-    result = retry_with_backoff(_make_call, max_retries=retries)
-    return result, stats
+    return complete(
+        messages=messages,
+        model=final_model,
+        provider=provider,
+        max_tokens=params.get("max_tokens"),
+        temperature=params.get("temperature"),
+        reasoning_effort=params.get("reasoning_effort"),
+    )
 
 
 def call_and_print(
@@ -117,6 +90,7 @@ def call_and_print(
     json_output: bool = False,
     show_stats: bool = False,
     retries: int = 3,
+    raw_model: bool = False,
 ) -> str:
     """Call the API and print the result.
 
@@ -151,9 +125,11 @@ def call_and_print(
         temperature=temperature,
         raw=raw,
         retries=retries,
+        raw_model=raw_model,
     )
 
     # Output
+    output: str | None = None
     if json_output:
         from .structured import build_json_output
 
@@ -184,4 +160,6 @@ def call_and_print(
     if show_stats and not json_output:
         stats.report(to_stderr=True)
 
-    return response_text if not json_output else output
+    if json_output and output is not None:
+        return output
+    return response_text

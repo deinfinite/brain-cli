@@ -84,6 +84,11 @@ def build_parser() -> argparse.ArgumentParser:
     think_parser.add_argument(
         "--stats", action="store_true", help="Show usage statistics on stderr"
     )
+    think_parser.add_argument(
+        "--raw-model",
+        action="store_true",
+        help="Use model name as-is, without provider prefix transformation",
+    )
 
     # ── key ──
     subparsers.add_parser("key", help="Show key location or set a new key")
@@ -154,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
                 raw=args.raw,
                 json_output=args.json,
                 show_stats=args.stats,
+                raw_model=args.raw_model,
             )
             return SUCCESS
 

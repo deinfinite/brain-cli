@@ -12,23 +12,35 @@ def _ensure_config() -> None:
     """Ensure config directory and file exist."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_FILE.exists():
-        CONFIG_FILE.write_text(
-            '[defaults]\nprovider = "openrouter"\nmodel = ""\n'
-        )
+        CONFIG_FILE.write_text('[defaults]\nprovider = "openrouter"\nmodel = ""\n')
 
 
 def load_config() -> dict:
-    """Read config file, return dict with provider and model."""
+    """Read config file, return dict with all sections."""
     import tomllib
 
     _ensure_config()
     data = CONFIG_FILE.read_text()
     parsed = tomllib.loads(data)
     defaults = parsed.get("defaults", {})
-    return {
+
+    result: dict = {
         "provider": defaults.get("provider", "openrouter"),
         "model": defaults.get("model", ""),
     }
+
+    # Provider-specific config
+    provider_configs = {}
+    for key, val in parsed.items():
+        if key.startswith("provider."):
+            provider_name = key.split(".", 1)[1]
+            if isinstance(val, dict):
+                provider_configs[provider_name] = val
+
+    if provider_configs:
+        result["provider_config"] = provider_configs
+
+    return result
 
 
 def save_config(key: str, value: str) -> None:
@@ -41,6 +53,8 @@ def save_config(key: str, value: str) -> None:
 
     lines = ["[defaults]"]
     for k, v in config.items():
+        if k == "provider_config":
+            continue
         if v == "":
             lines.append(f'{k} = ""')
         else:
@@ -57,3 +71,11 @@ def get_default_model() -> str | None:
     """Return the default model from config, or None if empty."""
     model = load_config()["model"]
     return model if model else None
+
+
+def get_provider_model_map(provider: str) -> dict[str, str]:
+    """Return model_map for a provider from config.toml."""
+    config = load_config()
+    provider_configs = config.get("provider_config", {})
+    prov = provider_configs.get(provider, {})
+    return prov.get("model_map", {})

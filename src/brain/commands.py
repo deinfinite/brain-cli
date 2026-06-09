@@ -35,6 +35,7 @@ def cmd_think(
     raw: bool = False,
     json_output: bool = False,
     show_stats: bool = False,
+    raw_model: bool = False,
 ) -> str:
     """Handle the 'think' subcommand."""
     valid_profiles = get_valid_profile_names()
@@ -68,6 +69,7 @@ def cmd_think(
         raw=raw,
         json_output=json_output,
         show_stats=show_stats,
+        raw_model=raw_model,
     )
 
 

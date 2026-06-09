@@ -20,6 +20,8 @@ PROVIDERS: dict[str, dict] = {
         "default_model": "openai/gpt-5.5",
         "key_url": "https://openrouter.ai/keys",
         "label": "OpenRouter",
+        "default_adapter": "oa_compat",
+        "model_map": {},
     },
     "opencode_go": {
         "env_var": "OPENCODE_GO_API_KEY",
@@ -27,6 +29,11 @@ PROVIDERS: dict[str, dict] = {
         "default_model": "qwen-3.7-max",
         "key_url": "https://opencode.ai/auth",
         "label": "OpenCode Go",
+        "default_adapter": "oa_compat",
+        "model_map": {
+            "qwen-3.7-max": "reasoning",
+            "qwen-3.7-pro": "reasoning",
+        },
     },
 }
 
@@ -60,7 +67,11 @@ def _save_var_to_file(path: Path, var_name: str, value: str) -> None:
     new_lines = []
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith(f"{var_name}=") and not stripped.startswith("#") or stripped.startswith(f"#{var_name}="):
+        if (
+            stripped.startswith(f"{var_name}=")
+            and not stripped.startswith("#")
+            or stripped.startswith(f"#{var_name}=")
+        ):
             new_lines.append(f"{var_name}={value}")
             found = True
         else:
@@ -87,6 +98,7 @@ def _save_key_to_file(path: Path, key: str) -> None:
 
 
 # ── multi-provider key resolution ───────────────────────────────
+
 
 def get_api_key(provider: str = "openrouter") -> str:
     """Get API key for a provider.
@@ -199,3 +211,10 @@ def get_default_model(provider: str) -> str:
     if not prov:
         return PROVIDERS["openrouter"]["default_model"]
     return prov["default_model"]
+
+
+def get_adapter_name(provider: str, model: str) -> str:
+    """Return adapter name for a model (from model_map or provider default)."""
+    prov = PROVIDERS.get(provider, {})
+    model_map = prov.get("model_map", {})
+    return model_map.get(model, prov.get("default_adapter", "oa_compat"))
