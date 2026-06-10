@@ -1,6 +1,6 @@
 # Brain CLI
 
-Exocortex reasoning engine for AI agents. Multi-provider LLM gateway with reasoning profiles, depth control, and structured output.
+Exocortex reasoning engine for AI agents. Multi-provider LLM gateway with reasoning profiles, depth control, structured output, and plan persistence for Hermes Agent Gate.
 
 ## Install
 
@@ -14,6 +14,47 @@ Or from source:
 git clone https://github.com/sl-build/brain-cli.git
 cd brain-cli
 uv tool install --editable .
+```
+
+## Hermes Plugin
+
+Copy the plugin from the repo to Hermes:
+
+```bash
+cp -r plugin/brain-tool ~/.hermes/plugins/brain-tool/
+```
+
+Enable in `~/.hermes/config.yaml`:
+
+```yaml
+plugins:
+  enabled:
+    - brain-tool
+```
+
+Restart Hermes. The plugin provides three tools (`brain_think`, `brain_plan_done`, `brain_plan_block`) and a `pre_tool_call` gate that blocks action tools (terminal, edit, bash, task) until an active plan exists.
+
+Full setup: see `LLMS.md`.
+
+## Plan Management
+
+Brain persists plans in `~/.brain/state/plan.json`. Plans auto-expire after 300 seconds of inactivity — each `brain plan done` and `brain plan block` resets the timer.
+
+```bash
+# Create a plan (uses planner profile, returns structured JSON)
+brain think "Fix the auth bug" --plan
+
+# Show current plan
+brain plan
+
+# Mark current step done → advances to next step
+brain plan done
+
+# Mark current step blocked
+brain plan block "Missing API credentials"
+
+# Bypass gate and overwrite plan
+brain think "Emergency hotfix" --force
 ```
 
 ## Quick Start
@@ -67,6 +108,11 @@ brain think "Detail the plan" --max-tokens 4096 --temperature 0.1
 | Command | Description |
 |---------|-------------|
 | `think` | Send prompt to reasoning engine |
+| `think --plan` | Create a structured plan (planner profile) |
+| `think --force` | Bypass gate and overwrite plan |
+| `plan` | Show current plan |
+| `plan done` | Mark current step done, advance |
+| `plan block [reason]` | Mark current step blocked |
 | `key` | Show current API key location |
 | `key-set <key>` | Save API key to profile .env |
 | `profiles` | List available reasoning profiles |

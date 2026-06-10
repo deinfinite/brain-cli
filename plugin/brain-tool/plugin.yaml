@@ -1,0 +1,9 @@
+name: brain-tool
+version: 0.3.0
+description: Brain CLI reasoning engine — think, plan, gate
+provides_tools:
+  - brain_think
+  - brain_plan_done
+  - brain_plan_block
+provides_hooks:
+  - pre_tool_call
