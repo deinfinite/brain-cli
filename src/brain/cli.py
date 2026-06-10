@@ -11,6 +11,9 @@ from .commands import (
     cmd_config_set,
     cmd_key,
     cmd_key_set,
+    cmd_plan,
+    cmd_plan_block,
+    cmd_plan_done,
     cmd_profile_add,
     cmd_profile_remove,
     cmd_profile_show,
@@ -91,6 +94,24 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Use model name as-is, without provider prefix transformation",
     )
+    think_parser.add_argument(
+        "--plan",
+        action="store_true",
+        help="Create a structured plan using the planner profile",
+    )
+    think_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Bypass gate and overwrite any existing plan",
+    )
+
+    # ── plan ──
+    plan_parser = subparsers.add_parser("plan", help="Show current plan")
+    plan_sub = plan_parser.add_subparsers(dest="plan_action")
+
+    plan_sub.add_parser("done", help="Mark current step as done")
+    plan_block_parser = plan_sub.add_parser("block", help="Mark current step as blocked")
+    plan_block_parser.add_argument("reason", nargs="?", default=None, help="Reason for blocking")
 
     # ── key ──
     subparsers.add_parser("key", help="Show key location or set a new key")
@@ -162,7 +183,18 @@ def main(argv: list[str] | None = None) -> int:
                 json_output=args.json,
                 show_stats=args.stats,
                 raw_model=args.raw_model,
+                plan_mode=args.plan,
+                force=args.force,
             )
+            return SUCCESS
+
+        elif args.command == "plan":
+            if args.plan_action == "done":
+                cmd_plan_done()
+            elif args.plan_action == "block":
+                cmd_plan_block(args.reason)
+            else:
+                cmd_plan()
             return SUCCESS
 
         elif args.command == "key":

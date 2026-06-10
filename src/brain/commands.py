@@ -1,6 +1,9 @@
-"""Brain CLI v2 — Command handlers (think, key, key-set)."""
+"""Brain CLI v3 — Command handlers (think, plan, key)."""
 
 from __future__ import annotations
+
+import json
+import sys
 
 from .client import call_and_print
 from .config import get_default_model as get_config_model
@@ -17,6 +20,30 @@ from .profiles import (
     get_valid_profile_names,
     remove_profile,
 )
+from .state import create_plan, delete_plan, load_plan, mark_blocked, mark_done, save_plan
+
+
+def _parse_plan_json(raw_response: str) -> list[str]:
+    stripped = raw_response.strip()
+    if stripped.startswith("```"):
+        lines = stripped.split("\n")
+        if len(lines) > 1:
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        stripped = "\n".join(lines).strip()
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        raise InputError(
+            f"Planner did not return valid JSON. Raw response:\n{raw_response[:500]}"
+        ) from None
+    if not isinstance(data, dict) or "steps" not in data:
+        raise InputError(f'Planner JSON missing "steps" key. Got: {json.dumps(data)[:200]}')
+    steps = data["steps"]
+    if not isinstance(steps, list) or len(steps) == 0:
+        raise InputError("Planner returned empty steps array")
+    return [s["title"] for s in steps]
 
 
 def cmd_think(
@@ -36,8 +63,13 @@ def cmd_think(
     json_output: bool = False,
     show_stats: bool = False,
     raw_model: bool = False,
+    plan_mode: bool = False,
+    force: bool = False,
 ) -> str:
     """Handle the 'think' subcommand."""
+    if plan_mode and force:
+        raise InputError("Cannot use both --plan and --force together")
+
     valid_profiles = get_valid_profile_names()
     if profile and profile not in valid_profiles:
         raise InputError(f"Unknown profile: {profile}. Valid: {', '.join(valid_profiles)}")
@@ -45,7 +77,6 @@ def cmd_think(
     if depth and depth not in VALID_DEPTHS:
         raise InputError(f"Unknown depth: {depth}. Valid: {', '.join(VALID_DEPTHS)}")
 
-    # Resolve provider and model from config if not given
     provider = provider or get_default_provider()
     if model is None:
         model = get_config_model()
@@ -57,7 +88,13 @@ def cmd_think(
         metadata=metadata,
     )
 
-    return call_and_print(
+    effective_profile = profile
+    effective_json = json_output
+    if plan_mode:
+        effective_profile = "planner"
+        effective_json = True
+
+    response = call_and_print(
         prompt=prompt,
         model=model,
         provider=provider,
@@ -65,12 +102,71 @@ def cmd_think(
         depth=depth,
         max_tokens=max_tokens,
         temperature=temperature,
-        profile=profile,
+        profile=effective_profile,
         raw=raw,
-        json_output=json_output,
+        json_output=effective_json,
         show_stats=show_stats,
         raw_model=raw_model,
     )
+
+    if plan_mode:
+        steps = _parse_plan_json(response)
+        plan = create_plan(prompt, steps)
+        save_plan(plan)
+        print("\n--- Plan saved ---", file=sys.stderr)
+        _print_plan(plan)
+    elif force:
+        delete_plan()
+        plan = create_plan(prompt, [response.strip()])
+        save_plan(plan)
+        print("\n--- Plan overwritten (force) ---", file=sys.stderr)
+        _print_plan(plan)
+
+    return response
+
+
+def _print_plan(plan) -> None:
+    status_icons = {"pending": "○", "in_progress": "●", "done": "✔", "blocked": "✗"}
+    print(f"\nPlan: {plan.prompt}", file=sys.stderr)
+    for i, step in enumerate(plan.steps):
+        icon = status_icons.get(step.status, "?")
+        marker = " ←" if i == plan.current_step else ""
+        print(f"  {icon} {step.title}{marker}", file=sys.stderr)
+    if plan.current_step >= len(plan.steps):
+        print("  ✓ All steps complete", file=sys.stderr)
+
+
+def cmd_plan() -> str:
+    plan = load_plan()
+    if plan is None:
+        print("No active plan.")
+        return "No active plan."
+    _print_plan(plan)
+    return ""
+
+
+def cmd_plan_done() -> str:
+    plan = mark_done()
+    if plan is None:
+        print("No active plan to mark done.")
+        return "No active plan."
+    if plan.current_step >= len(plan.steps):
+        print("All steps complete.")
+        delete_plan()
+    else:
+        next_step = plan.steps[plan.current_step]
+        print(f"Step done. Next: {next_step.title}")
+    return ""
+
+
+def cmd_plan_block(reason: str | None = None) -> str:
+    plan = mark_blocked(reason or "")
+    if plan is None:
+        print("No active plan to block.")
+        return "No active plan."
+    step = plan.steps[plan.current_step]
+    print(f"Blocked: {step.title}")
+    return ""
 
 
 def cmd_key() -> None:

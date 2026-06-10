@@ -28,8 +28,10 @@ PROFILE_PROMPTS: dict[str, dict] = {
     },
     "planner": {
         "system_prompt": (
-            "You are a strategic planner. Given a goal, produce a step-by-step plan with "
-            "dependencies, risks, and alternatives. Number each step. Include rollback options."
+            "You are a strategic planner. Given a goal, output ONLY a valid JSON object with "
+            'format: {"steps": [{"title": "Step description"}]}. '
+            "Steps must be atomic, verifiable, and executable in sequence. "
+            "No explanatory text outside the JSON. No markdown fences."
         ),
         "default_depth": "deep",
         "default_temperature": 0.3,
